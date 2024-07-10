@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+
+ATT81274.env
+output.json
+output.py
+package.json
+package-lock.json
+test.js
+test.py
+writing_to_final.py
