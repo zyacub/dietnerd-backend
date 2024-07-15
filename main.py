@@ -164,11 +164,11 @@ async def generate_final_response_endpoint(
     final_output = generate_final_response(all_relevant_articles, user_query)
     return_obj = {
        "end_output": final_output,
-       "relevent_articles": all_relevant_articles,
+       "relevant_articles": all_relevant_articles,
        "total_runtime": 60.0
        }
     main_output, citations = split_end_output(return_obj["end_output"])
-    relevent_articles = return_obj.get("relevent_articles", [])
+    relevant_articles = return_obj.get("relevant_articles", [])
     updated_citations = match_citations_with_articles(citations, all_relevant_articles)
     return_obj["end_output"] = final_output
     return_obj["citations_obj"] = updated_citations
@@ -211,7 +211,7 @@ async def sim_score(question: str):
    for item in scores_dict:
       score = item[0]
       sentence = item[1]
-      if (score > 0):
+      if (score > 0.23):
          heapq.heappush(min_heap, (score, sentence))
       if (len(min_heap) > 3):
          heapq.heappop(min_heap)
@@ -235,7 +235,8 @@ async def query_db_final(query: str):
    mycursor.execute(sql)
 
    myresult = mycursor.fetchall()
-
+   with open("output.json", "w") as f:
+      json.dump(myresult, f, indent=4)
    return myresult
 
 def calculate_similarity(sentences, source_sentence):
@@ -1490,35 +1491,52 @@ def upload_to_final(credentials, question, obj):
 
 
 def match_citations_with_articles(citations, articles):
-    # Create a dictionary to store the matched citation information
     citation_dict = {}
+    
+    # Create a dictionary of articles keyed by a normalized version of their citation
+    article_dict = {normalize_citation(article["citation"]): article for article in articles}
+    
     for citation in citations:
-        trim_citation = clean_citation(citation)
-        #print(trim_citation)
-        for article in articles:
-            # #print("ART: " + article["citation"])
-            to_match = parse_str(article["citation"])[20:70]
-            if to_match in citation:
-                #print("Match Found")
+        normalized_citation = normalize_citation(citation)
+        citation_slice = normalized_citation[10:50]  # Extract the slice
+        
+        for article_citation in article_dict:
+            if citation_slice in article_citation:
+                article = article_dict[article_citation]
                 citation_dict[citation] = {
                     "PMID": article["PMID"],
                     "PMCID": article["PMCID"],
                     "URL": article["url"],
                     "Summary": article["summary"]
                 }
+                break  # Stop searching once a match is found
+    
     return citation_dict
+
+def normalize_citation(citation):
+    # Remove the citation number at the beginning, if present
+    citation = re.sub(r'^\s*\[?\d+\.?\]?\s*', '', citation)
+    
+    # Remove all punctuation and convert to lowercase
+    citation = re.sub(r'[^\w\s]', '', citation.lower())
+    
+    # Remove extra whitespace
+    citation = ' '.join(citation.split())
+    
+    return citation
+
 
 def write_output_to_db(user_query, final_output, all_relevant_articles, total_runtime, env_file):
   return_obj = {
         "end_output": final_output,
-        "relevent_articles": all_relevant_articles,
+        "relevant_articles": all_relevant_articles,
         "total_runtime": total_runtime
       }
 
 
   main_output, citations = split_end_output(return_obj["end_output"])
 
-  relevent_articles = return_obj.get("relevent_articles", [])
+  relevant_articles = return_obj.get("relevant_articles", [])
   updated_citations = match_citations_with_articles(citations, all_relevant_articles)
 
 
