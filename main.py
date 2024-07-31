@@ -144,7 +144,7 @@ def process_user_query(user_query, session_id):
 
     print("matched articles")
     # Article Processing
-    relevant_article_summaries, irrelevant_article_summaries = concurrent_article_processing(articles_to_process)
+    relevant_article_summaries = concurrent_article_processing(articles_to_process)
 
     # Write Processed Articles to DB
     write_articles_to_db(relevant_article_summaries, env)
@@ -332,9 +332,6 @@ def calculate_similarity(sentences, source_sentence):
     
     return similarity_scores
 
-def background_process_query(user_query: str, session_id: str):
-    result = process_user_query(user_query, session_id)
-    run_async(update_queues[session_id].put({"type": "final", "data": result}))
 
 if __name__ == "__main__":
     import uvicorn

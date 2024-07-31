@@ -77,7 +77,7 @@ def determine_question_validity(query):
   - question_validity (str): A string indicating whether the question is valid or not. Possible responses can only either be "True", "False - Recipe", or "False - Animal".
   """
   valid_question_response = client.chat.completions.create(
-    model="gpt-4o",
+    model="gpt-4-turbo",
     messages=[
       {
         "role": "system",
@@ -142,7 +142,7 @@ def query_generation(query):
 
   #### GENERAL QUERY
   general_query_response = client.chat.completions.create(
-    model="gpt-4o",
+    model="gpt-4-turbo",
     messages=[
       {
         "role": "system",
@@ -174,7 +174,7 @@ def query_generation(query):
 
   #### POINTS OF CONTENTION QUERIES
   poc_response = client.chat.completions.create(
-    model="gpt-4o",
+    model="gpt-4-turbo",
     messages=[
       {
         "role": "system",
@@ -242,6 +242,7 @@ def query_generation(query):
 """## Step3. Information Retrieval"""
 
 #@title article_retrieval
+#@title article_retrieval
 def article_retrieval(query):
   """
   Retrieves up to 10 of the most relevant PubMed articles per query.
@@ -293,7 +294,7 @@ def collect_articles(query_list):
               seen_pmids.add(pmid)
 
   return articles_collected
-
+#@title relevance_classifier
 #@title relevance_classifier
 def relevance_classifier(article, user_query):
   """
@@ -345,7 +346,7 @@ def relevance_classifier(article, user_query):
         }
       ],
       temperature=0.8,
-      top_p=1
+      top_p=0.5
     )
 
   answer_relevance = relevance_response.choices[0].message.content
@@ -382,7 +383,6 @@ def concurrent_relevance_classification(articles, user_query):
                 print("Error processing article:", e)
 
   return relevant_articles, irrelevant_articles
-
 """## Step4. Research Processing
 * Summarization
 * Relevance Ranking
@@ -1124,6 +1124,7 @@ def get_full_text_wiley(url):
         return f"Failed to retrieve full text. Status code: {response.status_code}, Message: {response.text}"
 
 #@title process_article
+#@title process_article
 def process_article(article):
   """
   Create the article JSON that includes the following information:
@@ -1284,7 +1285,7 @@ def process_article(article):
             """
 
     reliability_analysis_response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4-turbo",
         messages = [
             {
                 "role": "system",
@@ -1306,7 +1307,6 @@ def process_article(article):
     return article_json
   except KeyError:
     print("No abstract provided")
-
 """### Reliability Analysis"""
 
 #@title process_article_with_retry
@@ -1328,7 +1328,7 @@ def process_article_with_retry(article):
       print("Trying again")
       return process_article(article)
 
-#@title concurrent_article_processing
+
 def concurrent_article_processing(articles_to_process):
   """
   Concurrent article processing using ThreadPoolExecutor.
@@ -1340,23 +1340,18 @@ def concurrent_article_processing(articles_to_process):
   - relevant_article_summaries (list): A list of relevant article summaries.
   """
   relevant_article_summaries = []
-  irrelevant_article_summaries = []
 
   with ThreadPoolExecutor(max_workers=8) as executor:
       futures = [executor.submit(process_article_with_retry, article) for article in articles_to_process]
       for future in as_completed(futures):
           try:
               result = future.result()
-              # Bucket articles as relevant vs irrelevant
-              if result["is_relevant"]:
-                  relevant_article_summaries.append(result)
-                  print(result)
-                  print('-----------------------------------------------------------')
-              else:
-                  irrelevant_article_summaries.append(result)
+              relevant_article_summaries.append(result)
+              print(result)
+              print('-----------------------------------------------------------')
           except Exception as e:
               print("Error processing article:", e)
-  return relevant_article_summaries, irrelevant_article_summaries
+  return relevant_article_summaries
 
 """#### Write Articles to DB"""
 
@@ -1521,7 +1516,8 @@ def generate_final_response(all_relevant_articles, query):
   - final_output (str): Final response to the user question.
   """
   system_prompt_response = """
-      You are an expert in evaluating research articles and summarizing findings based on the strength of evidence. Your task is to review the provided Evidence and Claims and use only those information that have strong evidence to answer the user's question. You must choose at least 6 articles and at most 15 articles and use only the information in these articles to answer the question. Strong evidence means the research is well-conducted, peer-reviewed, and widely accepted in the scientific community. Provide a direct, research-backed answer to the question and focus on identifying the pros and cons of the topic in question. The answer should highlight when there are potential risks or dangers present.
+      You are an expert in evaluating research articles and summarizing findings based on the strength of evidence. Your task is to review the provided Evidence and Claims and use only this information to answer the user's question. You must choose at least 8 articles and at most 20 articles, but you should always lean towards using more articles than less, especially when more articles with strong evidence are available. Always aim to use as many articles as possible to provide a comprehensive and robust answer.
+      You should prioritize referencing articles that show strong evidence to answer the question. Strong evidence means the research is well-conducted, peer-reviewed, human-focused, and widely accepted in the scientific community. Provide a direct, research-backed answer to the question and focus on identifying the pros and cons of the topic in question. The answer should highlight when there are potential risks or dangers present.
       If the user question is dangeorus, harmful, or malicious, absolutely do not offer advice or strategies and absolutely do not address the pros, benefits, or potential results/outcomes. You must only focus on deterring this behavior, addressing the risks, and offering safe alternatives. The answer should also try to include as many different demographics as possible. Absolutely NO animal studies should be referenced or included in the final response. Mention dosage amounts when the information is available. Medical terms and technical concepts must be explained to a layman audience. Be sure to emphasize that you should always go and see a registered dietitian or a registered dietitian nutritionist.
       There must be a reference list with the AMA citation format. Articles must be cited in-line in Vancouver style using brackets. References listed must be numerically listed using brackets. Include section titles like "Conclusion" and organize sections as a bulleted list using an asterisk. List each and every one of the cited articles mentioned at the end using the citations in Evidence and Claims. Do not list duplicate references.
 
@@ -1575,7 +1571,6 @@ def generate_final_response(all_relevant_articles, query):
   output = output_response.choices[0].message.content
   final_output = output + "\n" + disclaimer
   return final_output
-
 """### Write Final Output to Database"""
 
 def split_end_output(end_output: str):
@@ -1667,6 +1662,21 @@ def upload_to_final(credentials, question, obj):
           #print('MySQL connection is closed')
 
 
+def normalize_citation(citation):
+    # Remove the citation number at the beginning, if present
+    citation = re.sub(r'^\s*\[?\d+\.?\]?\s*', '', citation)
+
+    # Remove "et al." before removing other punctuation
+    citation = re.sub(r'\bet\s+al\b\.?', '', citation, flags=re.IGNORECASE)
+
+    # Remove all punctuation and convert to lowercase
+    citation = re.sub(r'[^\w\s]', '', citation.lower())
+
+    # Remove extra whitespace
+    citation = ' '.join(citation.split())
+
+    return citation
+
 def match_citations_with_articles(citations, articles):
   """
   Match citations with articles based on the cleaned citation.
@@ -1678,24 +1688,27 @@ def match_citations_with_articles(citations, articles):
   Returns:
     - citation_dict (dict): Dictionary of matched citations with articles.
   """
-  # Create a dictionary to store the matched citation information
   citation_dict = {}
+
+  # Create a dictionary of articles keyed by a normalized version of their citation
+  article_dict = {normalize_citation(article["citation"]): article for article in articles}
+
   for citation in citations:
-      trim_citation = clean_citation(citation)
-      #print(trim_citation)
-      for article in articles:
-          # #print("ART: " + article["citation"])
-          to_match = parse_str(article["citation"])[20:70]
-          if to_match in citation:
-              #print("Match Found")
-              citation_dict[citation] = {
+        normalized_citation = normalize_citation(citation)
+        citation_slice = normalized_citation[10:20]  # Extract the slice
+
+        for article_citation in article_dict:
+            if citation_slice in article_citation:
+                article = article_dict[article_citation]
+                citation_dict[citation] = {
                     "PMID": article["PMID"],
                     "PMCID": article["PMCID"],
                     "URL": article["url"],
                     "Summary": article["summary"]
-              }
-  return citation_dict
+                }
+                break  # Stop searching once a match is found
 
+  return citation_dict
 def write_output_to_db(user_query, final_output, all_relevant_articles, total_runtime, env_file):
   """
   Write the output to the finaloutputs table in the MySQL database.
